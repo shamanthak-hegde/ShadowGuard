@@ -54,6 +54,19 @@ class StatusUpdate(BaseModel):
     status: str = Field(..., pattern=r"^(active|mitigated|resolved)$")
 
 
+class VapiCallResponse(BaseModel):
+    id: int
+    call_id: Optional[str] = None
+    event_id: str
+    source_ip: Optional[str] = None
+    phone_number: Optional[str] = None
+    status: str = "initiated"
+    created_at: datetime
+    ended_at: Optional[datetime] = None
+    duration_seconds: Optional[int] = None
+    error_message: Optional[str] = None
+
+
 class StatsResponse(BaseModel):
     total_requests: int
     phi_detected: int

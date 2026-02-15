@@ -107,6 +107,9 @@ export default function AuditLog({ events, onSelectEvent }) {
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-400 tracking-wider uppercase">
                 Status
               </th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-400 tracking-wider uppercase">
+                Call
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -154,12 +157,21 @@ export default function AuditLog({ events, onSelectEvent }) {
                       <option value="resolved">Resolved</option>
                     </select>
                   </td>
+                  <td className="px-3 py-2 text-center">
+                    {e.voice_call ? (
+                      <span className="inline-flex items-center gap-1 text-[0.65rem] font-mono text-sg-amber">
+                        📞 {e.voice_call.status}
+                      </span>
+                    ) : (
+                      <span className="text-gray-600 text-[0.6rem]">--</span>
+                    )}
+                  </td>
                 </tr>
               );
             })}
             {paged.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-3 py-8 text-center text-gray-500 text-xs font-mono">
+                <td colSpan={8} className="px-3 py-8 text-center text-gray-500 text-xs font-mono">
                   No events to display
                 </td>
               </tr>

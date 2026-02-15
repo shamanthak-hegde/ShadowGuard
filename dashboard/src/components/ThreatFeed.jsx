@@ -78,6 +78,15 @@ function ThreatCard({ event, isNew, onClick }) {
         </div>
       )}
 
+      {event.voice_call && (
+        <div className="flex items-center gap-1.5 mb-2">
+          <span className="text-xs">📞</span>
+          <span className="text-[0.6rem] font-mono text-sg-amber">
+            Voice alert {event.voice_call.status}
+          </span>
+        </div>
+      )}
+
       <select
         value={event.status || 'active'}
         onChange={handleStatusChange}

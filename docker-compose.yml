@@ -25,6 +25,12 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://shadowguard:shadowguard@postgres:5432/shadowguard
+      VAPI_ENABLED: ${VAPI_ENABLED:-false}
+      VAPI_API_KEY: ${VAPI_API_KEY:-}
+      VAPI_PHONE_NUMBER_ID: ${VAPI_PHONE_NUMBER_ID:-}
+      VAPI_ASSISTANT_ID: ${VAPI_ASSISTANT_ID:-}
+      ALERT_PHONE_NUMBER: ${ALERT_PHONE_NUMBER:-}
+      CALL_COOLDOWN_SECONDS: ${CALL_COOLDOWN_SECONDS:-300}
 
   dashboard:
     build: ./dashboard

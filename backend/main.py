@@ -5,6 +5,7 @@ Healthcare Shadow AI Detection & Governance System
 Run: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 """
 
+import asyncio
 import json
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -15,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from database import init_db, get_cursor, dict_cursor, close_pool
 from models import EventCreate, EventResponse, StatusUpdate, StatsResponse
 from seed import generate_seed_events, insert_seed_events
+from vapi_caller import maybe_trigger_call, is_configured as vapi_is_configured, _make_vapi_call, ALERT_PHONE_NUMBER
 
 
 # ============================================================
@@ -47,6 +49,16 @@ class ConnectionManager:
 
 
 manager = ConnectionManager()
+
+
+def broadcast_from_thread(message: dict):
+    """Schedule an async broadcast from a synchronous background thread."""
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.run_coroutine_threadsafe(manager.broadcast(message), loop)
+    except RuntimeError:
+        pass
 
 
 # ============================================================
@@ -156,6 +168,9 @@ async def create_event(event: EventCreate):
 
     # Broadcast to WebSocket clients
     await manager.broadcast({"type": "new_event", "data": created})
+
+    # Trigger VAPI voice call for high-risk events (non-blocking)
+    maybe_trigger_call(created, broadcast_fn=broadcast_from_thread)
 
     return created
 
@@ -332,10 +347,96 @@ def seed_database():
 
     with get_cursor() as cur:
         # Clear existing data
+        cur.execute("DELETE FROM vapi_calls")
         cur.execute("DELETE FROM events")
         insert_seed_events(cur, events)
 
     return {"message": f"Seeded {len(events)} events", "count": len(events)}
+
+
+# ============================================================
+# VAPI Voice Call Endpoints
+# ============================================================
+
+@app.get("/api/calls")
+def list_calls(
+    limit: int = Query(50, ge=1, le=200),
+    event_id: str | None = Query(None),
+):
+    """List VAPI call records."""
+    query = "SELECT * FROM vapi_calls WHERE 1=1"
+    params: list = []
+
+    if event_id:
+        query += " AND event_id = %s"
+        params.append(event_id)
+
+    query += " ORDER BY created_at DESC LIMIT %s"
+    params.append(limit)
+
+    with get_cursor(cursor_factory=dict_cursor()) as cur:
+        cur.execute(query, params)
+        rows = cur.fetchall()
+
+    result = []
+    for row in rows:
+        d = dict(row)
+        for key in ("created_at", "ended_at"):
+            if key in d and d[key] is not None:
+                d[key] = d[key].isoformat()
+        if "event_id" in d and d["event_id"] is not None:
+            d["event_id"] = str(d["event_id"])
+        result.append(d)
+    return result
+
+
+@app.get("/api/calls/stats")
+def get_call_stats():
+    """Aggregate voice call statistics."""
+    with get_cursor(cursor_factory=dict_cursor()) as cur:
+        cur.execute("SELECT COUNT(*) as total FROM vapi_calls")
+        total = cur.fetchone()["total"]
+
+        cur.execute("SELECT COUNT(*) as cnt FROM vapi_calls WHERE status = 'failed'")
+        failed = cur.fetchone()["cnt"]
+
+        cur.execute(
+            "SELECT COUNT(*) as cnt FROM vapi_calls WHERE status NOT IN ('failed', 'initiated')"
+        )
+        completed = cur.fetchone()["cnt"]
+
+    return {
+        "total_calls": total,
+        "completed_calls": completed,
+        "failed_calls": failed,
+    }
+
+
+@app.post("/api/calls/test")
+def trigger_test_call():
+    """Manually trigger a test VAPI call (for demo)."""
+    if not vapi_is_configured():
+        raise HTTPException(
+            status_code=503,
+            detail="VAPI not configured. Set VAPI_ENABLED=true, VAPI_API_KEY, VAPI_PHONE_NUMBER_ID, VAPI_ASSISTANT_ID, ALERT_PHONE_NUMBER.",
+        )
+
+    import threading
+    test_event = {
+        "event_id": "00000000-0000-0000-0000-000000000000",
+        "source_ip": "10.0.10.1",
+        "ai_service": "ChatGPT",
+        "risk_score": 95,
+        "severity": "critical",
+        "phi_types": ["PERSON", "US_SSN", "DATE_OF_BIRTH"],
+    }
+    thread = threading.Thread(
+        target=_make_vapi_call,
+        args=(test_event, broadcast_from_thread),
+        daemon=True,
+    )
+    thread.start()
+    return {"message": "Test call triggered", "phone": ALERT_PHONE_NUMBER}
 
 
 # ============================================================

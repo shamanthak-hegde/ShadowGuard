@@ -40,3 +40,25 @@ export async function seedDatabase() {
   if (!res.ok) throw new Error('Failed to seed database');
   return res.json();
 }
+
+export async function fetchCalls(params = {}) {
+  const query = new URLSearchParams();
+  if (params.limit) query.set('limit', params.limit);
+  if (params.event_id) query.set('event_id', params.event_id);
+
+  const res = await fetch(`${API_BASE}/calls?${query}`);
+  if (!res.ok) throw new Error('Failed to fetch calls');
+  return res.json();
+}
+
+export async function fetchCallStats() {
+  const res = await fetch(`${API_BASE}/calls/stats`);
+  if (!res.ok) throw new Error('Failed to fetch call stats');
+  return res.json();
+}
+
+export async function triggerTestCall() {
+  const res = await fetch(`${API_BASE}/calls/test`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to trigger test call');
+  return res.json();
+}

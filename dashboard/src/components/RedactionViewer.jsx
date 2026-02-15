@@ -111,6 +111,11 @@ export default function RedactionViewer({ event, onClose }) {
             <span className="text-xs font-mono text-gray-500">
               {new Date(event.timestamp).toLocaleString()}
             </span>
+            {event.voice_call && (
+              <span className="flex items-center gap-1 text-xs font-mono text-sg-amber">
+                📞 Voice Alert: {event.voice_call.status}
+              </span>
+            )}
           </div>
           <button
             onClick={onClose}

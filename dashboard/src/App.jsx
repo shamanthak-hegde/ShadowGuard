@@ -8,7 +8,7 @@ import NetworkGraph from './components/NetworkGraph';
 import AuditLog from './components/AuditLog';
 import RedactionViewer from './components/RedactionViewer';
 import { useWebSocket } from './hooks/useWebSocket';
-import { fetchStats, fetchEvents } from './lib/api';
+import { fetchStats, fetchEvents, fetchCalls, fetchCallStats } from './lib/api';
 
 const defaultStats = {
   total_requests: 0,
@@ -28,18 +28,32 @@ export default function App() {
   const [events, setEvents] = useState([]);
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [newEventIds, setNewEventIds] = useState(new Set());
+  const [callStats, setCallStats] = useState({ total_calls: 0, completed_calls: 0, failed_calls: 0 });
   const newEventTimeouts = useRef(new Map());
 
   // Load initial data
   useEffect(() => {
     async function loadData() {
       try {
-        const [statsData, eventsData] = await Promise.all([
+        const [statsData, eventsData, callData, callsList] = await Promise.all([
           fetchStats(),
           fetchEvents({ limit: 200 }),
+          fetchCallStats().catch(() => ({ total_calls: 0, completed_calls: 0, failed_calls: 0 })),
+          fetchCalls({ limit: 200 }).catch(() => []),
         ]);
         setStats(statsData);
-        setEvents(eventsData);
+        setCallStats(callData);
+
+        // Merge call data into events
+        const callMap = {};
+        callsList.forEach((c) => {
+          callMap[c.event_id] = { call_id: c.call_id, status: c.status, phone_number: c.phone_number };
+        });
+        const enrichedEvents = eventsData.map((e) => ({
+          ...e,
+          voice_call: callMap[e.event_id] || null,
+        }));
+        setEvents(enrichedEvents);
       } catch (err) {
         console.error('Failed to load initial data:', err);
       }
@@ -108,6 +122,18 @@ export default function App() {
         )
       );
     }
+
+    if (msg.type === 'voice_call') {
+      const { event_id, call_id, status, phone_number } = msg.data;
+      setEvents((prev) =>
+        prev.map((e) =>
+          e.event_id === event_id
+            ? { ...e, voice_call: { call_id, status, phone_number } }
+            : e
+        )
+      );
+      setCallStats((prev) => ({ ...prev, total_calls: prev.total_calls + 1 }));
+    }
   }, []);
 
   const { connected } = useWebSocket(handleWsMessage);
@@ -139,7 +165,7 @@ export default function App() {
     <div className="min-h-screen p-4">
       <Header connected={connected} totalEvents={events.length} />
 
-      <StatsCards stats={phiStats} />
+      <StatsCards stats={phiStats} callStats={callStats} />
 
       {/* Main grid: ThreatFeed | Charts | NetworkGraph */}
       <div className="grid grid-cols-12 gap-4 mb-4">

@@ -283,3 +283,20 @@ def insert_seed_events(cursor, events: list[dict]):
                 e["response_time_ms"], e["timestamp"],
             ),
         )
+
+        # Insert fake VAPI call records for critical/high events
+        if e["severity"] in ("critical", "high") and random.random() < 0.6:
+            cursor.execute(
+                """
+                INSERT INTO vapi_calls (call_id, event_id, source_ip, phone_number, status, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    f"call_{uuid.uuid4().hex[:12]}",
+                    e["event_id"],
+                    e["source_ip"],
+                    "+15551234567",
+                    random.choice(["queued", "ended", "ended", "failed"]),
+                    e["timestamp"],
+                ),
+            )

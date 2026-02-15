@@ -22,7 +22,7 @@ function StatCard({ icon, label, value, isFloat, trend, colorClass }) {
   );
 }
 
-export default function StatsCards({ stats }) {
+export default function StatsCards({ stats, callStats }) {
   const avgRiskColor =
     stats.avg_risk_score < 30
       ? 'text-sg-green'
@@ -31,7 +31,7 @@ export default function StatsCards({ stats }) {
         : 'text-sg-red';
 
   return (
-    <div className="grid grid-cols-4 gap-4 mb-4">
+    <div className="grid grid-cols-5 gap-4 mb-4">
       <StatCard
         icon="🛡️"
         label="Total Intercepted"
@@ -57,6 +57,12 @@ export default function StatsCards({ stats }) {
         value={stats.avg_risk_score}
         isFloat
         colorClass={avgRiskColor}
+      />
+      <StatCard
+        icon="📞"
+        label="Voice Alerts Sent"
+        value={callStats?.total_calls || 0}
+        colorClass="text-sg-amber"
       />
     </div>
   );

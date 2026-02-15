@@ -118,6 +118,29 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_events_severity ON events(severity);
         """)
 
+        # VAPI voice calls table
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS vapi_calls (
+                id              SERIAL PRIMARY KEY,
+                call_id         TEXT,
+                event_id        UUID NOT NULL,
+                source_ip       TEXT,
+                phone_number    TEXT,
+                status          TEXT DEFAULT 'initiated',
+                created_at      TIMESTAMPTZ DEFAULT NOW(),
+                ended_at        TIMESTAMPTZ,
+                duration_seconds INTEGER,
+                error_message   TEXT
+            );
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_vapi_calls_event_id ON vapi_calls(event_id);
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_vapi_calls_source_ip_created
+            ON vapi_calls(source_ip, created_at DESC);
+        """)
+
 
 def close_pool():
     """Close all connections in the pool."""
