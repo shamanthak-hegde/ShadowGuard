@@ -1,0 +1,5 @@
+__pycache__/
+.venv/
+.claude/
+backend/__pycache__/
+dashboard/node_modules/

@@ -1,0 +1,279 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================
+   ShadowGuard — Cybersecurity Theme
+   ============================================ */
+
+:root {
+  --sg-bg: #06060c;
+  --sg-panel: rgba(10, 15, 30, 0.8);
+  --sg-cyan: #00f0ff;
+  --sg-red: #ff0040;
+  --sg-amber: #ff8800;
+  --sg-green: #00ff88;
+  --sg-purple: #a855f7;
+  --sg-border: rgba(0, 240, 255, 0.15);
+  --sg-text: #e0e0e0;
+  --sg-text-dim: #6b7280;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--sg-bg);
+  color: var(--sg-text);
+  font-family: 'Inter', system-ui, sans-serif;
+  overflow-x: hidden;
+  min-height: 100vh;
+}
+
+/* Grid background pattern */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-image:
+    linear-gradient(rgba(0, 240, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 240, 255, 0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+#root {
+  position: relative;
+  z-index: 1;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(10, 15, 30, 0.5);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 240, 255, 0.2);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 240, 255, 0.4);
+}
+
+/* Glass panel base class */
+.glass-panel {
+  background: var(--sg-panel);
+  border: 1px solid var(--sg-border);
+  border-radius: 12px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: box-shadow 0.3s ease;
+}
+
+.glass-panel:hover {
+  box-shadow: 0 0 20px rgba(0, 240, 255, 0.1);
+}
+
+/* Severity badges */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 9999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  font-family: 'JetBrains Mono', monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.badge-critical {
+  background: rgba(255, 0, 64, 0.2);
+  color: var(--sg-red);
+  border: 1px solid rgba(255, 0, 64, 0.3);
+}
+
+.badge-high {
+  background: rgba(255, 136, 0, 0.2);
+  color: var(--sg-amber);
+  border: 1px solid rgba(255, 136, 0, 0.3);
+}
+
+.badge-medium {
+  background: rgba(255, 200, 0, 0.15);
+  color: #ffc800;
+  border: 1px solid rgba(255, 200, 0, 0.25);
+}
+
+.badge-low {
+  background: rgba(0, 240, 255, 0.1);
+  color: var(--sg-cyan);
+  border: 1px solid rgba(0, 240, 255, 0.2);
+}
+
+.badge-clean {
+  background: rgba(0, 255, 136, 0.1);
+  color: var(--sg-green);
+  border: 1px solid rgba(0, 255, 136, 0.2);
+}
+
+/* Pulse animation for live indicator */
+@keyframes pulse-green {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(0, 255, 136, 0.7); }
+  50% { opacity: 0.8; box-shadow: 0 0 0 6px rgba(0, 255, 136, 0); }
+}
+
+@keyframes pulse-red {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(255, 0, 64, 0.7); }
+  50% { opacity: 0.8; box-shadow: 0 0 0 6px rgba(255, 0, 64, 0); }
+}
+
+.live-dot-connected {
+  animation: pulse-green 2s infinite;
+}
+
+.live-dot-disconnected {
+  animation: pulse-red 2s infinite;
+}
+
+/* Critical event pulse glow */
+@keyframes critical-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 0, 64, 0.2); }
+  50% { box-shadow: 0 0 15px 2px rgba(255, 0, 64, 0.15); }
+}
+
+.critical-glow {
+  animation: critical-pulse 2s infinite;
+}
+
+/* Slide-in animation for new events */
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.slide-in {
+  animation: slide-in 0.4s ease-out;
+}
+
+/* Counter animation */
+@keyframes count-glow {
+  0% { text-shadow: 0 0 10px rgba(0, 240, 255, 0.5); }
+  100% { text-shadow: none; }
+}
+
+/* Scanline effect (subtle) */
+.scanline::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 240, 255, 0.008) 2px,
+    rgba(0, 240, 255, 0.008) 4px
+  );
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* PHI tag */
+.phi-tag {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 0.6rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 500;
+  background: rgba(168, 85, 247, 0.15);
+  color: var(--sg-purple);
+  border: 1px solid rgba(168, 85, 247, 0.25);
+  margin: 1px 2px;
+}
+
+/* Tooltip base */
+.d3-tooltip {
+  position: absolute;
+  padding: 8px 12px;
+  background: rgba(6, 6, 12, 0.95);
+  border: 1px solid var(--sg-border);
+  border-radius: 8px;
+  color: var(--sg-text);
+  font-size: 0.75rem;
+  font-family: 'JetBrains Mono', monospace;
+  pointer-events: none;
+  z-index: 100;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+}
+
+/* Status select dropdown */
+.status-select {
+  appearance: none;
+  background: rgba(10, 15, 30, 0.9);
+  border: 1px solid var(--sg-border);
+  border-radius: 6px;
+  color: var(--sg-text);
+  font-size: 0.7rem;
+  font-family: 'JetBrains Mono', monospace;
+  padding: 3px 20px 3px 8px;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b7280' d='M3 5l3 3 3-3'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 4px center;
+}
+
+.status-select:focus {
+  outline: none;
+  border-color: var(--sg-cyan);
+}
+
+/* Modal overlay */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 6, 12, 0.85);
+  backdrop-filter: blur(8px);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* D3 chart styles */
+.d3-chart text {
+  fill: #6b7280;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+}
+
+.d3-chart .domain {
+  stroke: rgba(0, 240, 255, 0.15);
+}
+
+.d3-chart .tick line {
+  stroke: rgba(0, 240, 255, 0.08);
+}
