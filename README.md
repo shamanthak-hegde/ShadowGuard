@@ -1,155 +1,209 @@
-# ShadowGuard — Quick Test Guide
+# ShadowGuard
 
-## What This Tests
-You're testing if mitmproxy can intercept HTTPS requests to AI services
-(ChatGPT, Claude, Gemini) from both browser AND terminal, inspect the
-content, detect PHI, and block dangerous requests.
+**Healthcare Shadow AI Detection & Governance System** | TreeHacks 2026
 
----
-
-## Step-by-Step (5 minutes to test)
-
-### Terminal 1: Start the proxy
-
-```bash
-# Install mitmproxy (one-time)
-# macOS:
-brew install mitmproxy
-# Linux:
-pip install mitmproxy
-
-# Start the proxy with the ShadowGuard addon
-mitmdump -s shadowguard_addon.py --listen-port 8080
-```
-
-This terminal will show live intercepts with color-coded risk scores.
+ShadowGuard intercepts HTTPS traffic to AI services (ChatGPT, Claude, Gemini), detects Protected Health Information (PHI) using NLP, redacts it in real-time, and provides a cybersecurity-themed governance dashboard with live WebSocket updates and automated voice alerts.
 
 ---
 
-### Terminal 2: Install the CA cert (one-time)
+## Architecture
 
-The first time you run mitmproxy, it generates a CA certificate at
-`~/.mitmproxy/mitmproxy-ca-cert.pem`. You need to trust this cert.
-
-**macOS:**
-```bash
-# Add to system keychain
-sudo security add-trusted-cert -d -r trustRoot \
-  -k /Library/Keychains/System.keychain \
-  ~/.mitmproxy/mitmproxy-ca-cert.pem
+```
+                    ┌──────────────┐
+  Browser/App ───►  │  mitmproxy   │ ──► AI Service (OpenAI, Anthropic, Google)
+                    │  + addon     │
+                    └──────┬───────┘
+                           │ POST /api/events
+                    ┌──────▼───────┐
+                    │   FastAPI    │ ──► VAPI Voice Calls (high-risk alerts)
+                    │   Backend    │
+                    └──────┬───────┘
+                           │ WebSocket + REST
+                    ┌──────▼───────┐
+                    │    React     │
+                    │  Dashboard   │
+                    └──────────────┘
 ```
 
-**Linux:**
-```bash
-sudo cp ~/.mitmproxy/mitmproxy-ca-cert.pem \
-  /usr/local/share/ca-certificates/mitmproxy.crt
-sudo update-ca-certificates
-```
+| Component | Stack | Port |
+|-----------|-------|------|
+| Proxy | mitmproxy + Python addon | 8080 |
+| Backend | FastAPI, PostgreSQL 14, psycopg2 | 8000 |
+| Dashboard | React 18, Vite, D3.js, TailwindCSS | 3000 |
+| Voice Alerts | VAPI + GPT-5.2 + ElevenLabs | - |
 
 ---
 
-### Terminal 2: Test with terminal requests
+## Quick Start
+
+### 1. Start the backend + dashboard + database
 
 ```bash
-# Set proxy environment variables
+docker compose up --build
+```
+
+This starts PostgreSQL, the FastAPI backend, and the React dashboard.
+
+### 2. Seed demo data
+
+```bash
+curl -X POST http://localhost:8000/api/seed
+```
+
+### 3. Open the dashboard
+
+Navigate to [http://localhost:3000](http://localhost:3000)
+
+### 4. Start the proxy (separate terminal)
+
+```bash
+# Activate the conda environment
+source /path/to/anaconda3/etc/profile.d/conda.sh && conda activate shadow
+
+# Run mitmproxy with the ShadowGuard addon
+mitmproxy -s shadowguard_addon.py
+```
+
+### 5. Route traffic through the proxy
+
+```bash
 export HTTPS_PROXY=http://localhost:8080
 export HTTP_PROXY=http://localhost:8080
 export SSL_CERT_FILE=~/.mitmproxy/mitmproxy-ca-cert.pem
-
-# Test 1: Simple curl to OpenAI (should be LOGGED)
-curl -X POST https://api.openai.com/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer sk-fake-test-key" \
-  -d '{
-    "model": "gpt-4",
-    "messages": [{"role": "user", "content": "How do I sort a list in Python?"}]
-  }'
-
-# Test 2: Curl with PHI (should be BLOCKED!)
-curl -X POST https://api.openai.com/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer sk-fake-test-key" \
-  -d '{
-    "model": "gpt-4",
-    "messages": [{"role": "user", "content": "Summarize notes for patient John Doe, MRN: 847291, SSN: 423-91-8847, DOB: 03/15/1958. Diagnosis E11.9 Type 2 Diabetes. Prescribed Metformin 1000mg."}]
-  }'
-
-# Test 3: Run the full automated test suite
-python3 test_interception.py --auto
 ```
 
----
+Or launch a proxied Chrome:
 
-### Browser test
-
-Open a NEW Chrome window that uses the proxy:
-
-**macOS:**
 ```bash
+# macOS
 open -na "Google Chrome" --args \
   --proxy-server="http://localhost:8080" \
   --user-data-dir="/tmp/chrome-proxy-test"
 ```
 
-**Linux:**
-```bash
-google-chrome \
-  --proxy-server="http://localhost:8080" \
-  --user-data-dir="/tmp/chrome-proxy-test"
+---
+
+## VAPI Voice Alerts
+
+When a high-risk PHI exposure is detected (severity critical/high, risk score >= 70), ShadowGuard can automatically call the responsible staff via VAPI to notify them.
+
+### Setup
+
+1. Create a VAPI account at [vapi.ai](https://vapi.ai)
+2. Configure a phone number and an assistant on the VAPI dashboard
+3. The assistant should use template variables: `{{service}}`, `{{phi_types}}`, `{{risk_score}}`, `{{action_taken}}`, `{{timestamp}}`, `{{department}}`
+4. Add your credentials to `.env`:
+
+```env
+VAPI_ENABLED=true
+VAPI_API_KEY=your-private-key
+VAPI_PHONE_NUMBER_ID=your-vapi-phone-id
+VAPI_ASSISTANT_ID=your-assistant-id
+ALERT_PHONE_NUMBER=+1XXXXXXXXXX
+CALL_COOLDOWN_SECONDS=300
 ```
 
-Then:
-1. Navigate to `http://mitm.it` and install the mitmproxy cert for your OS
-2. Go to `https://chatgpt.com`
-3. Type a message — watch Terminal 1 light up with the intercept!
-4. Try pasting fake patient data — it should show PHI detection
+### How it works
+
+- Calls are **only triggered** when `VAPI_ENABLED=true` — safe to run without it
+- Seeding demo data does **not** trigger real calls (only inserts fake call records)
+- Per-IP cooldown prevents call spam (default: 5 minutes)
+- Test a call manually: `curl -X POST http://localhost:8000/api/calls/test`
 
 ---
 
-## What You Should See
+## Environment Variables
 
-In Terminal 1 (mitmproxy), for each intercepted request:
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `DATABASE_URL` | Yes (Docker sets it) | `postgresql://shadowguard:shadowguard@localhost:5432/shadowguard` | PostgreSQL connection string |
+| `VAPI_ENABLED` | No | `false` | Enable voice call alerts |
+| `VAPI_API_KEY` | For calls | - | VAPI private API key |
+| `VAPI_PHONE_NUMBER_ID` | For calls | - | VAPI phone number ID |
+| `VAPI_ASSISTANT_ID` | For calls | - | Pre-configured VAPI assistant ID |
+| `ALERT_PHONE_NUMBER` | For calls | - | Phone number to receive alert calls |
+| `CALL_COOLDOWN_SECONDS` | No | `300` | Minimum seconds between calls per source IP |
+
+---
+
+## API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/health` | Health check |
+| `POST` | `/api/events` | Ingest event from mitmproxy |
+| `GET` | `/api/events` | List events (supports `limit`, `offset`, `severity`, `service`, `status`) |
+| `GET` | `/api/events/:id` | Get single event |
+| `PATCH` | `/api/events/:id/status` | Update event status (active/mitigated/resolved) |
+| `GET` | `/api/stats` | Dashboard aggregate statistics |
+| `POST` | `/api/seed` | Seed database with demo data |
+| `GET` | `/api/calls` | List VAPI call records |
+| `GET` | `/api/calls/stats` | Voice call aggregate stats |
+| `POST` | `/api/calls/test` | Trigger a test VAPI call |
+| `WS` | `/api/ws` | WebSocket for real-time updates |
+
+---
+
+## Testing Interception
+
+### Terminal test (with proxy running)
+
+```bash
+# Clean request (no PHI) — should be logged
+curl -X POST https://api.openai.com/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-fake-test-key" \
+  -d '{"model": "gpt-4", "messages": [{"role": "user", "content": "How do I sort a list in Python?"}]}'
+
+# PHI request — should be detected and redacted
+curl -X POST https://api.openai.com/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-fake-test-key" \
+  -d '{"model": "gpt-4", "messages": [{"role": "user", "content": "Summarize notes for patient John Doe, SSN: 423-91-8847, DOB: 03/15/1958. Diagnosis E11.9 Type 2 Diabetes."}]}'
+```
+
+### Browser test
+
+1. Launch Chrome with proxy: `--proxy-server="http://localhost:8080"`
+2. Navigate to `http://mitm.it` and install the mitmproxy CA certificate
+3. Go to `https://chatgpt.com` and type a message
+4. Watch the dashboard update in real-time
+
+---
+
+## Project Structure
 
 ```
-======================================================================
-🛡️  SHADOWGUARD INTERCEPT
-======================================================================
-  ⏰ Time:      14:23:07
-  🌐 Service:   OpenAI API
-  📡 Method:    POST /v1/chat/completions
-  📦 Size:      342 chars
-  🚨 Risk Score: 85/100
-
-  🚨 PHI DETECTED:
-     - SSN: 1 match(es)
-     - MRN: 1 match(es)
-     - Patient_Name: 1 match(es)
-     - DOB: 1 match(es)
-
-  📋 Breakdown:
-     • Unauthorized AI service: OpenAI API (+15)
-     • PHI detected [SSN]: 1 match(es) (+15)
-     • PHI detected [MRN]: 1 match(es) (+15)
-     • PHI detected [Patient_Name]: 1 match(es) (+15)
-     • PHI detected [DOB]: 1 match(es) (+15)
-     • Medical keywords: 5 found (+15)
-     • Data submission method: POST (+5)
-
-  🚫 ACTION: REQUEST BLOCKED
-  → User redirected to Safe Zone
-======================================================================
-```
-
-For the blocked request, the caller receives:
-```json
-{
-  "error": {
-    "message": "🛡️ ShadowGuard: Request BLOCKED — potential PHI detected...",
-    "type": "shadowguard_phi_block",
-    "risk_score": 85,
-    "phi_types_detected": ["SSN", "MRN", "Patient_Name", "DOB"]
-  }
-}
+ShadowGuard/
+├── shadowguard_addon.py    # mitmproxy addon — intercepts, detects PHI, posts to backend
+├── phi_redactor.py         # PHI detection engine (Presidio + regex fallback)
+├── docker-compose.yml      # PostgreSQL + backend + dashboard
+├── .env                    # VAPI and other environment variables
+├── backend/
+│   ├── main.py             # FastAPI app, routes, WebSocket manager
+│   ├── database.py         # PostgreSQL connection pool, table creation
+│   ├── models.py           # Pydantic request/response models
+│   ├── seed.py             # Demo data generator
+│   ├── vapi_caller.py      # VAPI voice call integration
+│   ├── requirements.txt    # Python dependencies
+│   └── Dockerfile
+└── dashboard/
+    ├── src/
+    │   ├── App.jsx         # Main app with state management + WebSocket
+    │   ├── components/
+    │   │   ├── StatsCards.jsx       # Summary stat cards
+    │   │   ├── ThreatFeed.jsx       # Live threat feed sidebar
+    │   │   ├── TrafficTimeline.jsx  # D3 traffic timeline chart
+    │   │   ├── RiskHeatmap.jsx      # D3 risk heatmap
+    │   │   ├── NetworkGraph.jsx     # D3 force-directed network graph
+    │   │   ├── AuditLog.jsx         # Sortable/paginated audit table
+    │   │   └── RedactionViewer.jsx  # Side-by-side original/redacted modal
+    │   ├── hooks/
+    │   │   └── useWebSocket.js      # WebSocket hook with auto-reconnect
+    │   └── lib/
+    │       └── api.js               # REST API client functions
+    ├── package.json
+    └── Dockerfile
 ```
 
 ---
@@ -157,19 +211,16 @@ For the blocked request, the caller receives:
 ## Troubleshooting
 
 **"SSL certificate verify failed"**
-→ You haven't installed/trusted the mitmproxy CA cert. Follow the cert step above.
+Install/trust the mitmproxy CA cert: `sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ~/.mitmproxy/mitmproxy-ca-cert.pem`
 
-**"Connection refused"**  
-→ mitmproxy isn't running. Start it in Terminal 1.
+**"Connection refused" on port 8000**
+Make sure `docker compose up` is running and the backend container is healthy.
 
-**"curl works but Python doesn't"**
-→ Some Python HTTP libs ignore env vars. Use `--auto` flag with the test script,
-   or set `REQUESTS_CA_BUNDLE=~/.mitmproxy/mitmproxy-ca-cert.pem` too.
+**VAPI calls failing with 403**
+Ensure `User-Agent` header is set (already handled in code). Check your VAPI API key is the **private** key, not the public one.
 
-**Browser shows "Your connection is not private"**
-→ Navigate to `http://mitm.it` first to install the cert in the browser.
-   Or use the `--user-data-dir` flag to launch a fresh Chrome profile.
+**VAPI calls failing with SSL errors**
+The backend Docker container disables SSL verification for outbound VAPI calls to avoid certificate issues with proxies.
 
-**ChatGPT uses WebSockets / streaming**
-→ mitmproxy handles SSE streams fine. WebSocket support is also built-in.
-   You might see multiple intercepts for a single chat message (that's normal).
+**Dashboard not updating**
+Check the WebSocket connection indicator in the header. The dashboard auto-reconnects if the connection drops.
