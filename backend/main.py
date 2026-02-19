@@ -421,7 +421,6 @@ def trigger_test_call():
             detail="VAPI not configured. Set VAPI_ENABLED=true, VAPI_API_KEY, VAPI_PHONE_NUMBER_ID, VAPI_ASSISTANT_ID, ALERT_PHONE_NUMBER.",
         )
 
-    import threading
     test_event = {
         "event_id": "00000000-0000-0000-0000-000000000000",
         "source_ip": "10.0.10.1",
@@ -430,9 +429,19 @@ def trigger_test_call():
         "severity": "critical",
         "phi_types": ["PERSON", "US_SSN", "DATE_OF_BIRTH"],
     }
+    # Insert call record synchronously, then fire the API call in a thread
+    with get_cursor(cursor_factory=dict_cursor()) as cur:
+        cur.execute(
+            "INSERT INTO vapi_calls (event_id, source_ip, phone_number, status) "
+            "VALUES (%s, %s, %s, 'initiated') RETURNING id",
+            (test_event["event_id"], test_event["source_ip"], ALERT_PHONE_NUMBER),
+        )
+        call_db_id = cur.fetchone()["id"]
+
+    import threading
     thread = threading.Thread(
         target=_make_vapi_call,
-        args=(test_event, broadcast_from_thread),
+        args=(call_db_id, test_event, broadcast_from_thread),
         daemon=True,
     )
     thread.start()

@@ -17,8 +17,11 @@ Usage:
 """
 
 import re
+import json
 import logging
 from typing import Optional
+from urllib.request import Request, urlopen
+from urllib.error import URLError
 
 logger = logging.getLogger("shadowguard.phi")
 
@@ -206,6 +209,145 @@ def regex_redact(text: str) -> dict:
 
 
 # ============================================================
+# Ollama LLM Engine (optional, requires local Ollama server)
+# ============================================================
+
+OLLAMA_URL = "http://localhost:11434"
+OLLAMA_MODEL = "llama3.2:1b"
+
+OLLAMA_SYSTEM_PROMPT = (
+    "You are a HIPAA PHI detection system. Given text, identify ALL Protected Health Information entities.\n"
+    'Return ONLY a JSON array of objects with "entity_type" and "text" fields. No explanation, no markdown.\n\n'
+    "Entity types: PERSON, US_SSN, PHONE_NUMBER, EMAIL_ADDRESS, DATE_OF_BIRTH, "
+    "MEDICAL_RECORD_NUMBER, DIAGNOSIS_CODE, MEDICATION, ADDRESS, DATE_TIME, LOCATION\n\n"
+    'Example input: "Patient John Doe, SSN 423-91-8847, DOB 03/15/1958"\n'
+    'Example output: [{"entity_type": "PERSON", "text": "John Doe"}, '
+    '{"entity_type": "US_SSN", "text": "423-91-8847"}, '
+    '{"entity_type": "DATE_OF_BIRTH", "text": "03/15/1958"}]\n\n'
+    "If no PHI is found, return: []"
+)
+
+REDACTION_MAP = {
+    "PERSON": "[REDACTED_NAME]",
+    "US_SSN": "[REDACTED_SSN]",
+    "PHONE_NUMBER": "[REDACTED_PHONE]",
+    "EMAIL_ADDRESS": "[REDACTED_EMAIL]",
+    "DATE_OF_BIRTH": "[REDACTED_DOB]",
+    "MEDICAL_RECORD_NUMBER": "[REDACTED_MRN]",
+    "DIAGNOSIS_CODE": "[REDACTED_DX]",
+    "MEDICATION": "[REDACTED_MED]",
+    "ADDRESS": "[REDACTED_ADDRESS]",
+    "DATE_TIME": "[REDACTED_DATE]",
+    "LOCATION": "[REDACTED_LOCATION]",
+}
+
+
+def _check_ollama() -> bool:
+    """Check if Ollama is running and reachable."""
+    try:
+        req = Request(f"{OLLAMA_URL}/api/tags")
+        with urlopen(req, timeout=2) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
+
+
+def ollama_redact(text: str) -> dict:
+    """Use Ollama LLM to detect and redact PHI from text."""
+    payload = {
+        "model": OLLAMA_MODEL,
+        "prompt": text,
+        "system": OLLAMA_SYSTEM_PROMPT,
+        "stream": False,
+    }
+
+    try:
+        req = Request(
+            f"{OLLAMA_URL}/api/generate",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(req, timeout=30) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+            raw_response = body.get("response", "").strip()
+    except (URLError, OSError, json.JSONDecodeError) as e:
+        logger.warning("Ollama request failed: %s", e)
+        return {
+            "redacted_text": text,
+            "findings": [],
+            "phi_detected": False,
+            "phi_count": 0,
+            "entity_types_found": [],
+            "engine": "ollama",
+        }
+
+    # Strip markdown fencing if the LLM wrapped the JSON
+    cleaned = raw_response
+    if cleaned.startswith("```"):
+        lines = cleaned.split("\n")
+        # Remove first line (```json) and last line (```)
+        lines = [l for l in lines if not l.strip().startswith("```")]
+        cleaned = "\n".join(lines)
+
+    try:
+        entities = json.loads(cleaned)
+        if not isinstance(entities, list):
+            entities = []
+    except (json.JSONDecodeError, TypeError):
+        logger.warning("Ollama returned invalid JSON: %s", raw_response[:200])
+        return {
+            "redacted_text": text,
+            "findings": [],
+            "phi_detected": False,
+            "phi_count": 0,
+            "entity_types_found": [],
+            "engine": "ollama",
+        }
+
+    # Build findings with start/end offsets and redact
+    findings = []
+    redacted = text
+
+    # Sort by text length descending to avoid partial-match issues during replacement
+    valid_entities = []
+    for ent in entities:
+        if not isinstance(ent, dict):
+            continue
+        ent_text = ent.get("text", "")
+        ent_type = ent.get("entity_type", "UNKNOWN")
+        if ent_text and ent_text in text:
+            valid_entities.append((ent_type, ent_text))
+
+    valid_entities.sort(key=lambda x: len(x[1]), reverse=True)
+
+    for ent_type, ent_text in valid_entities:
+        start = text.find(ent_text)
+        if start == -1:
+            continue
+        findings.append(
+            {
+                "entity_type": ent_type,
+                "text": ent_text,
+                "start": start,
+                "end": start + len(ent_text),
+                "score": 0.90,
+            }
+        )
+        replacement = REDACTION_MAP.get(ent_type, "[REDACTED]")
+        redacted = redacted.replace(ent_text, replacement)
+
+    return {
+        "redacted_text": redacted,
+        "findings": findings,
+        "phi_detected": len(findings) > 0,
+        "phi_count": len(findings),
+        "entity_types_found": list(set(f["entity_type"] for f in findings)),
+        "engine": "ollama",
+    }
+
+
+# ============================================================
 # Main PHI Redactor Class
 # ============================================================
 
@@ -216,12 +358,22 @@ class PHIRedactor:
     Uses Presidio when available, falls back to regex.
     """
 
-    def __init__(self, use_presidio: bool = True):
-        self.use_presidio = use_presidio and PRESIDIO_AVAILABLE
+    def __init__(self, use_presidio: bool = True, use_ollama: bool = False):
+        self.use_ollama = use_ollama
+        if self.use_ollama:
+            if _check_ollama():
+                logger.info("Using Ollama (%s) PHI detection", OLLAMA_MODEL)
+            else:
+                logger.warning(
+                    "Ollama not reachable at %s — falling back to regex", OLLAMA_URL
+                )
+                self.use_ollama = False
+
+        self.use_presidio = use_presidio and PRESIDIO_AVAILABLE and not self.use_ollama
 
         if self.use_presidio:
             self._init_presidio()
-        else:
+        elif not self.use_ollama:
             logger.info("Using regex-based PHI detection")
 
     def _init_presidio(self):
@@ -313,6 +465,9 @@ class PHIRedactor:
                 "engine": "none",
             }
 
+        if self.use_ollama:
+            return ollama_redact(text)
+
         if not self.use_presidio:
             return regex_redact(text)
 
@@ -366,6 +521,14 @@ class PHIRedactor:
         """Detect PHI without redacting (for risk scoring only)."""
         if not text or not text.strip():
             return {"findings": [], "phi_detected": False, "phi_count": 0}
+
+        if self.use_ollama:
+            result = ollama_redact(text)
+            return {
+                "findings": result["findings"],
+                "phi_detected": result["phi_detected"],
+                "phi_count": result["phi_count"],
+            }
 
         if not self.use_presidio:
             result = regex_redact(text)

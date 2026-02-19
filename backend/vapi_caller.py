@@ -61,25 +61,14 @@ def _extract_phi_list(event_data: dict) -> str:
     return ", ".join(phi_types) if phi_types else "protected health information"
 
 
-def _make_vapi_call(event_data: dict, broadcast_fn=None):
+def _make_vapi_call(call_db_id: int, event_data: dict, broadcast_fn=None):
     """
-    Synchronous function that calls VAPI API and records the result.
-    Designed to run in a background thread.
+    Synchronous function that calls VAPI API and updates the call record.
+    Designed to run in a background thread. The call record is already
+    inserted before this runs (to prevent race conditions).
     """
     event_id = event_data.get("event_id")
-    source_ip = event_data.get("source_ip")
     phone = ALERT_PHONE_NUMBER
-
-    # Insert a pending call record
-    with get_cursor(cursor_factory=dict_cursor()) as cur:
-        cur.execute(
-            "INSERT INTO vapi_calls (event_id, source_ip, phone_number, status) "
-            "VALUES (%s, %s, %s, 'initiated') RETURNING *",
-            (event_id, source_ip, phone),
-        )
-        call_record = dict(cur.fetchone())
-
-    call_db_id = call_record["id"]
 
     # Use the pre-configured VAPI assistant with variable overrides
     payload = {
@@ -143,6 +132,11 @@ def _make_vapi_call(event_data: dict, broadcast_fn=None):
             pass
         error_msg = f"HTTP {e.code}: {body_text[:500]}"
         logger.error("VAPI call failed for event %s: %s", event_id, error_msg)
+        with get_cursor() as cur:
+            cur.execute(
+                "UPDATE vapi_calls SET status = 'failed', error_message = %s WHERE id = %s",
+                (error_msg, call_db_id),
+            )
     except URLError as e:
         error_msg = str(e)[:500]
         logger.error("VAPI call failed for event %s: %s", event_id, error_msg)
@@ -157,6 +151,10 @@ def maybe_trigger_call(event_data: dict, broadcast_fn=None):
     """
     Check if the event warrants a VAPI call and trigger it in a background thread.
     Called from create_event in main.py.
+
+    The call record is inserted synchronously BEFORE starting the thread,
+    so that rapid duplicate requests (e.g. ChatGPT sending prepare + submit
+    + response within milliseconds) are caught by the cooldown check.
     """
     if not is_configured():
         return
@@ -167,14 +165,30 @@ def maybe_trigger_call(event_data: dict, broadcast_fn=None):
     if severity not in ("critical", "high") or risk_score < 70:
         return
 
+    # Skip pre-submit requests (e.g. ChatGPT's /conversation/prepare)
+    request_path = event_data.get("request_path", "")
+    if "prepare" in request_path or "telemetry" in request_path or "sentinel" in request_path:
+        return
+
     source_ip = event_data.get("source_ip", "")
     if _check_cooldown(source_ip):
-        logger.info("Skipping VAPI call for %s: cooldown active", source_ip)
         return
+
+    # Insert the call record NOW (synchronously) so the next request
+    # within milliseconds will see it in the cooldown check
+    event_id = event_data.get("event_id")
+    phone = ALERT_PHONE_NUMBER
+    with get_cursor(cursor_factory=dict_cursor()) as cur:
+        cur.execute(
+            "INSERT INTO vapi_calls (event_id, source_ip, phone_number, status) "
+            "VALUES (%s, %s, %s, 'initiated') RETURNING id",
+            (event_id, source_ip, phone),
+        )
+        call_db_id = cur.fetchone()["id"]
 
     thread = threading.Thread(
         target=_make_vapi_call,
-        args=(event_data, broadcast_fn),
+        args=(call_db_id, event_data, broadcast_fn),
         daemon=True,
     )
     thread.start()

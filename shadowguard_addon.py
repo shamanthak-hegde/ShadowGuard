@@ -23,6 +23,9 @@ from phi_redactor import PHIRedactor
 # CONFIGURATION
 # ============================================================
 
+# PHI engine: "regex" (default) or "ollama" (requires local Ollama with llama3.2:3b)
+PHI_ENGINE = "regex"
+
 # Known AI service domains → friendly names
 AI_DOMAINS = {
     # OpenAI
@@ -254,7 +257,7 @@ BACKEND_URL = "http://localhost:8000/api/events"
 
 class ShadowGuard:
     def __init__(self):
-        self.redactor = PHIRedactor(use_presidio=False)
+        self.redactor = PHIRedactor(use_presidio=False, use_ollama=(PHI_ENGINE == "ollama"))
         ctx.log.info("ShadowGuard initialized with PHI redactor")
 
     def _post_event(self, flow, matched_service, risk, phi_result, readable_body, action):
